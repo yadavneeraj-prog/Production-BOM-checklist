@@ -5,7 +5,7 @@ const requireAuth = require('../middleware/auth');
 const router = express.Router();
 router.use(requireAuth);
 
-// GET /api/master  -> [{ brand, models: [...] }, ...]
+// GET /api/master  -> [{ brand, models: [...] }, ...] — shared across all departments
 router.get('/', async (req, res) => {
   const list = await BrandModel.find().sort({ brand: 1 });
   res.json(list);

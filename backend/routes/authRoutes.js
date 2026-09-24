@@ -2,13 +2,15 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const Department = require('../models/Department');
+const requireAuth = require('../middleware/auth');
 const { sendEmail } = require('../utils/sendEmail');
 
 const router = express.Router();
 
 function signToken(user){
   return jwt.sign(
-    { id: user._id, email: user.email, name: user.name },
+    { id: user._id, email: user.email, name: user.name, department: user.department },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
   );
@@ -17,17 +19,22 @@ function signToken(user){
 // POST /api/auth/register
 router.post('/register', async (req, res) => {
   try{
-    const { name, email, password } = req.body;
-    if(!name || !email || !password) return res.status(400).json({ message: 'Name, email and password are required' });
+    const { name, email, password, department } = req.body;
+    if(!name || !email || !password || !department){
+      return res.status(400).json({ message: 'Name, email, password and department are required' });
+    }
+
+    const deptExists = await Department.findOne({ name: department });
+    if(!deptExists) return res.status(400).json({ message: 'Select a valid department' });
 
     const existing = await User.findOne({ email: email.toLowerCase() });
     if(existing) return res.status(409).json({ message: 'An account with this email already exists' });
 
     const passwordHash = await bcrypt.hash(password, 10);
-    const user = await User.create({ name, email: email.toLowerCase(), passwordHash });
+    const user = await User.create({ name, email: email.toLowerCase(), passwordHash, department });
 
     const token = signToken(user);
-    res.status(201).json({ token, user: { id: user._id, name: user.name, email: user.email } });
+    res.status(201).json({ token, user: { id: user._id, name: user.name, email: user.email, department: user.department } });
   }catch(err){
     res.status(500).json({ message: 'Registration failed', error: err.message });
   }
@@ -60,10 +67,17 @@ router.post('/login', async (req, res) => {
     await user.save();
 
     const token = signToken(user);
-    res.json({ token, user: { id: user._id, name: user.name, email: user.email } });
+    res.json({ token, user: { id: user._id, name: user.name, email: user.email, department: user.department } });
   }catch(err){
     res.status(500).json({ message: 'Login failed', error: err.message });
   }
+});
+
+// GET /api/auth/me  -> current logged-in user's profile (id, name, email, department)
+router.get('/me', requireAuth, async (req, res) => {
+  const user = await User.findById(req.user.id).select('name email department');
+  if(!user) return res.status(404).json({ message: 'User not found' });
+  res.json(user);
 });
 
 // POST /api/auth/forgot-password  -> emails a 6-digit OTP
@@ -79,12 +93,19 @@ router.post('/forgot-password', async (req, res) => {
     user.otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 min
     await user.save();
 
-    await sendEmail({
-      to: user.email,
-      subject: 'Your Production BoM Check password reset OTP',
-      text: `Your OTP is ${otp}. It expires in 10 minutes.`,
-      html: `<p>Your OTP is <b>${otp}</b>. It expires in 10 minutes.</p>`
-    });
+    try{
+      await sendEmail({
+        to: user.email,
+        subject: 'Your Production BoM Check password reset OTP',
+        text: `Your OTP is ${otp}. It expires in 10 minutes.`,
+        html: `<p>Your OTP is <b>${otp}</b>. It expires in 10 minutes.</p>`
+      });
+    }catch(emailErr){
+      // Email not configured/working yet (e.g. Brevo sender not verified) —
+      // don't block local testing. Log the OTP to the server console instead.
+      console.warn('Could not send OTP email, printing to console instead:', emailErr.message);
+      console.log(`\n=== OTP for ${user.email}: ${otp} (valid 10 minutes) ===\n`);
+    }
 
     res.json({ message: 'If this email is registered, an OTP has been sent.' });
   }catch(err){
