@@ -62,7 +62,7 @@ export default function Login(){
           <Link to="/forgot-password">Forgot password?</Link>
           <a onClick={() => setIsRegister(r => !r)}>{isRegister ? 'Have an account? Sign in' : 'Create account'}</a>
         </div>
-        <div className="footer-credit">Develop by Akshit Panwar</div>
+        <div className="footer-credit">Developed By Neeraj Yadav</div>
       </div>
 
       <Modal
