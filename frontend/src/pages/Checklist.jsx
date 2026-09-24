@@ -79,7 +79,7 @@ export default function Checklist(){
             <button className="btn btn-ghost" onClick={() => navigate('/')}>Back to BOM list</button>
             <button className="btn btn-ghost" onClick={exportExcel}>Export Excel</button>
           </div>
-          <div className="footer-credit">Develop by Akshit Panwar</div>
+          <div className="footer-credit">Developed By Neeraj Yadav</div>
         </div>
       </div>
     );
@@ -143,7 +143,7 @@ export default function Checklist(){
             </div>
           </>
         )}
-        <div className="footer-credit">Develop by Akshit Panwar</div>
+        <div className="footer-credit">Developed By Neeraj Yadav</div>
       </div>
 
       <AttemptsModal open={showAttemptsModal} onConfirm={confirmAttempts} onCancel={() => navigate('/')} />
