@@ -6,6 +6,8 @@ const connectDB = require('./config/db');
 const authRoutes = require('./routes/authRoutes');
 const masterRoutes = require('./routes/masterRoutes');
 const bomRoutes = require('./routes/bomRoutes');
+const departmentRoutes = require('./routes/departmentRoutes');
+const planningRoutes = require('./routes/planningRoutes');
 
 const app = express();
 
@@ -27,17 +29,18 @@ app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 app.use('/api/auth', authRoutes);
 app.use('/api/master', masterRoutes);
 app.use('/api/boms', bomRoutes);
+app.use('/api/departments', departmentRoutes);
+app.use('/api/planning', planningRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);
   res.status(500).json({ message: 'Server error', error: err.message });
 });
 
-// Sirf local mein chalega (node server.js / npm run dev)
+// Local aur Render dono par chalega
 if (require.main === module) {
   const PORT = process.env.PORT || 5000;
   app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 }
 
-// Netlify function isko use karega
 module.exports = app;
