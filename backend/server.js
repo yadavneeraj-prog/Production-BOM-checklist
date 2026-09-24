@@ -12,6 +12,16 @@ const app = express();
 app.use(cors({ origin: process.env.CLIENT_ORIGIN || '*' }));
 app.use(express.json({ limit: '5mb' }));
 
+// Har request se pehle DB connect check (cached connection use hoga)
+app.use(async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
+
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 
 app.use('/api/auth', authRoutes);
@@ -23,8 +33,11 @@ app.use((err, req, res, next) => {
   res.status(500).json({ message: 'Server error', error: err.message });
 });
 
-const PORT = process.env.PORT || 5000;
-
-connectDB().then(() => {
+// Sirf local mein chalega (node server.js / npm run dev)
+if (require.main === module) {
+  const PORT = process.env.PORT || 5000;
   app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-});
+}
+
+// Netlify function isko use karega
+module.exports = app;
