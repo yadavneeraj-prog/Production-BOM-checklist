@@ -63,7 +63,7 @@ export default function ForgotPassword(){
         )}
 
         {status && <p className="sub" style={{ marginTop: 14 }}>{status}</p>}
-        <div className="footer-credit">Developed By Neeraj Yadav</div>
+        <div className="footer-credit">Developed by Neeraj Yadav</div>
       </div>
     </div>
   );

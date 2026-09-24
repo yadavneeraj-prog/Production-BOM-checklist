@@ -1,38 +1,46 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import api from '../api/api.js';
 import Modal from '../components/Modal.jsx';
+import ChecklistFieldsModal from '../components/ChecklistFieldsModal.jsx';
+
+// Formats a Mongo timestamp (UTC ISO string) into Asia/Kolkata display time,
+// so "Added" dates match the same timezone used everywhere else in the app.
+function formatKolkata(isoString){
+  if(!isoString) return '-';
+  return new Date(isoString).toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: true
+  });
+}
 
 export default function Dashboard(){
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const fileInputRef = useRef(null);
 
-  const [masterList, setMasterList] = useState([]); // [{ brand, models: [...] }]
-  const [brand, setBrand] = useState('');
-  const [model, setModel] = useState('');
+  const [department] = useState(() => localStorage.getItem('bom_department') || '');
+  const [masterList, setMasterList] = useState([]); // [{ brand, models: [...] }] shared across all departments
+  const [brand, setBrand] = useState(() => searchParams.get('brand') || '');
+  const [model, setModel] = useState(() => searchParams.get('model') || '');
   const [bomEntries, setBomEntries] = useState([]);
-  const [inProgress, setInProgress] = useState([]);
-  const [openDots, setOpenDots] = useState(null); // entry id whose menu is open
-  const [modal, setModal] = useState(null); // { title, message, showInput, inputDefault, confirmText, showCancel, onConfirm }
+  const [openDots, setOpenDots] = useState(null);
+  const [modal, setModal] = useState(null);
+  const [fieldsModalEntry, setFieldsModalEntry] = useState(null); // BOM entry currently being configured
 
-  useEffect(() => { loadMaster(); loadInProgress(); }, []);
-  useEffect(() => { if(brand && model) loadBoms(); else setBomEntries([]); }, [brand, model]);
+  useEffect(() => { loadMaster(); }, []);
+  useEffect(() => { if(department && brand && model) loadBoms(); else setBomEntries([]); }, [brand, model]);
 
   async function loadMaster(){
     const { data } = await api.get('/master');
     setMasterList(data);
   }
-  async function loadInProgress(){
-    const { data } = await api.get('/boms/in-progress');
-    setInProgress(data);
-  }
   async function loadBoms(){
-    const { data } = await api.get('/boms', { params: { brand, model } });
+    const { data } = await api.get('/boms', { params: { department, brand, model } });
     setBomEntries(data);
   }
 
   function closeModal(){ setModal(null); }
-
   function askText(title, inputDefault = ''){
     return new Promise(resolve => {
       setModal({
@@ -60,7 +68,7 @@ export default function Dashboard(){
     });
   }
 
-  // ---- Brand master ----
+  // ---- Brand master (shared across every department) ----
   async function addBrand(){
     const name = await askText('New brand name');
     if(!name || !name.trim()) return;
@@ -82,7 +90,7 @@ export default function Dashboard(){
     await loadMaster(); setBrand(''); setModel('');
   }
 
-  // ---- Model master ----
+  // ---- Model master (shared across every department) ----
   async function addModel(){
     if(!brand) return notify('Select a brand', 'Select a brand first.');
     const name = await askText('New model name');
@@ -108,18 +116,37 @@ export default function Dashboard(){
   // ---- BOM entries ----
   async function onFileChosen(e){
     const file = e.target.files[0];
-    if(!file || !brand || !model) return;
+    if(!file) return;
+    if(!department){
+      await notify('Missing department', 'Your account has no department set. Please log out and sign in again.');
+      e.target.value = '';
+      return;
+    }
+    if(!brand || !model){
+      await notify('Select brand and model', 'Select a brand and model before adding a BOM.');
+      e.target.value = '';
+      return;
+    }
     const form = new FormData();
     form.append('file', file);
+    form.append('department', department);
     form.append('brand', brand);
     form.append('model', model);
     try{
-      await api.post('/boms', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const { data } = await api.post('/boms', form, { headers: { 'Content-Type': 'multipart/form-data' } });
       await loadBoms();
+      setFieldsModalEntry(data); // ask which checklist fields this BOM should use
     }catch(err){
       await notify('Could not save BOM', err.response?.data?.message || 'Please try again.');
     }
     e.target.value = '';
+  }
+
+  async function confirmChecklistFields(fields){
+    if(!fieldsModalEntry) return;
+    await api.put(`/boms/${fieldsModalEntry._id}/fields`, fields);
+    setFieldsModalEntry(null);
+    await loadBoms();
   }
 
   async function editBomEntry(entry){
@@ -149,36 +176,24 @@ export default function Dashboard(){
   }
 
   function openChecklist(entryId){ navigate(`/checklist/${entryId}`); }
-  async function jumpToInProgress(id){ if(id) openChecklist(id); }
-
-  function logout(){ localStorage.removeItem('bom_token'); navigate('/login'); }
+  function logout(){ localStorage.removeItem('bom_token'); localStorage.removeItem('bom_department'); navigate('/login'); }
 
   const models = masterList.find(b => b.brand === brand)?.models || [];
 
   return (
     <div className="screen-wrap">
       <div className="topbar wide">
-        <div className="logo-badge"><span className="dot"></span> Production BoM Check</div>
+        <div className="logo-badge"><span className="dot"></span> {department} BoM Check</div>
         <button className="back-btn" onClick={logout} style={{ padding: '6px 10px' }}>Logout</button>
+      </div>
+
+      <div className="back-row wide">
+        <Link className="back-btn" to="/">&larr; Back to Planning</Link>
       </div>
 
       <div className="card wide">
         <h1 className="title">BOM Checklist</h1>
         <p className="sub">Select brand and model, then attach or open a BOM</p>
-
-        {inProgress.length > 0 && (
-          <div style={{ marginBottom: 4 }}>
-            <label>This month's checklists in progress</label>
-            <select onChange={e => jumpToInProgress(e.target.value)} value="">
-              <option value="">Jump to a checklist you started this month</option>
-              {inProgress.map(it => (
-                <option key={it.id} value={it.id}>
-                  {it.brand} / {it.model} — {it.label} — {it.done}/{it.required} done, {it.pending === 0 ? 'complete' : `${it.pending} pending`}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
 
         <label>Brand</label>
         <div className="select-row" style={{ position: 'relative' }}>
@@ -216,7 +231,7 @@ export default function Dashboard(){
           </div>
         </div>
 
-        {brand && model && (
+        {department && brand && model && (
           <div style={{ marginTop: 8 }}>
             <h2 style={{ fontSize: 14, fontWeight: 700, marginTop: 22 }}>BOM files for this model</h2>
             <div className="add-bom-btn" onClick={() => fileInputRef.current.click()}
@@ -234,11 +249,12 @@ export default function Dashboard(){
                 const chipText = entry.requiredAttempts == null
                   ? 'Open to set required checks per month'
                   : (remaining === 0 ? `All ${entry.requiredAttempts} attempts complete this month` : `${entry.attempts.length}/${entry.requiredAttempts} done \u00b7 ${remaining} pending`);
+                const savedDate = formatKolkata(entry.createdAt);
                 return (
                   <div key={entry._id} className="bom-entry" onClick={(e) => { if(!e.target.closest('.dots-btn') && !e.target.closest('.dots-menu')) openChecklist(entry._id); }}>
                     <div>
                       <div style={{ fontSize: 13.5, fontWeight: 600 }}>{entry.label}</div>
-                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>{entry.fileName}</div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>{entry.fileName} &middot; Added {savedDate}</div>
                       <div className={`attempts-chip ${remaining === 0 && entry.requiredAttempts != null ? 'done' : 'pending'}`}>{chipText}</div>
                     </div>
                     <div style={{ position: 'relative' }}>
@@ -247,6 +263,7 @@ export default function Dashboard(){
                         <div className="dots-menu">
                           <button onClick={(e) => { e.stopPropagation(); setOpenDots(null); fileInputRef.current.click(); }}>Add</button>
                           <button onClick={(e) => { e.stopPropagation(); setOpenDots(null); editBomEntry(entry); }}>Edit</button>
+                          <button onClick={(e) => { e.stopPropagation(); setOpenDots(null); setFieldsModalEntry(entry); }}>Edit Fields</button>
                           <button onClick={(e) => { e.stopPropagation(); setOpenDots(null); exportEntryToExcel(entry); }}>Export Excel</button>
                           <button className="danger" onClick={(e) => { e.stopPropagation(); setOpenDots(null); deleteBomEntry(entry); }}>Delete</button>
                         </div>
@@ -276,6 +293,13 @@ export default function Dashboard(){
           onCancel={modal.onCancel}
         />
       )}
+
+      <ChecklistFieldsModal
+        open={!!fieldsModalEntry}
+        initial={fieldsModalEntry?.checklistFields}
+        onConfirm={confirmChecklistFields}
+        onCancel={() => setFieldsModalEntry(null)}
+      />
     </div>
   );
 }
