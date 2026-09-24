@@ -260,7 +260,7 @@ export default function Dashboard(){
           </div>
         )}
 
-        <div className="footer-credit">Develop by Akshit Panwar</div>
+        <div className="footer-credit">Developed by Neeraj yadav</div>
       </div>
 
       {modal && (
